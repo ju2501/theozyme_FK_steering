@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "theozyme-steer"
+version = "0.1.1"
+description = "CPU-tested geometry rewards and sequential Monte Carlo core for enzyme steering research"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.23,<3"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+report = ["matplotlib>=3.6"]
+
+[project.scripts]
+theozyme-steer = "steer.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

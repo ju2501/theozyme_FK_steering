@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "kind": "synthetic_geometry_not_enzyme",
+  "config": {
+    "task": "../theozyme/synthetic.json",
+    "replicates": 20,
+    "seed": 20260924,
+    "select_k": 4,
+    "fk": {
+      "num_particles": 16,
+      "steps": 40,
+      "scale": 2.0,
+      "ess_fraction": 0.5,
+      "every": 4,
+      "start_fraction": 0.25,
+      "end_fraction": 0.9
+    }
+  },
+  "task_sha256": "4fa6d746b05d4831d557eb98aa69a2e38b6776288dbbbfaeee90fe01b94a9834",
+  "source_sha256": "73bd19c96d9478bb391d21a1b65f8de1b2fe1fe7c3591b35d537c089cd0ba345",
+  "package_version": "0.1.1",
+  "python": "3.12.14",
+  "numpy": "2.3.5"
+}

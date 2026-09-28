@@ -1,0 +1,15 @@
+{
+  "task": "../theozyme/synthetic.json",
+  "replicates": 20,
+  "seed": 20260924,
+  "select_k": 4,
+  "fk": {
+    "num_particles": 16,
+    "steps": 40,
+    "scale": 2.0,
+    "ess_fraction": 0.5,
+    "every": 4,
+    "start_fraction": 0.25,
+    "end_fraction": 0.9
+  }
+}

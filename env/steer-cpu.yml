@@ -1,0 +1,9 @@
+name: steer-cpu
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy>=1.23,<3
+  - pip
+  - pytest>=7
+  - matplotlib>=3.6

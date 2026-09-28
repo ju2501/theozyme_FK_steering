@@ -1,0 +1,84 @@
+{
+  "name": "synthetic_four_point_geometry",
+  "description": "Synthetic fixture only. Three anchors and one moving point; no enzyme or chemical validation.",
+  "atoms": {
+    "a": {
+      "chain": "X",
+      "resseq": 1,
+      "name": "C1",
+      "resname": "SYN",
+      "record": "HETATM",
+      "role": "fixed"
+    },
+    "b": {
+      "chain": "X",
+      "resseq": 1,
+      "name": "C2",
+      "resname": "SYN",
+      "record": "HETATM",
+      "role": "fixed"
+    },
+    "c": {
+      "chain": "X",
+      "resseq": 1,
+      "name": "C3",
+      "resname": "SYN",
+      "record": "HETATM",
+      "role": "fixed"
+    },
+    "d": {
+      "chain": "X",
+      "resseq": 1,
+      "name": "C4",
+      "resname": "SYN",
+      "record": "HETATM",
+      "role": "generated"
+    }
+  },
+  "constraints": [
+    {
+      "name": "a_to_d",
+      "kind": "distance",
+      "atoms": [
+        "a",
+        "d"
+      ],
+      "target": 1.7320508075688772,
+      "tolerance": 0.25,
+      "scale": 1.0
+    },
+    {
+      "name": "b_to_d",
+      "kind": "distance",
+      "atoms": [
+        "b",
+        "d"
+      ],
+      "target": 1.7320508075688772,
+      "tolerance": 0.25,
+      "scale": 1.0
+    },
+    {
+      "name": "c_to_d",
+      "kind": "distance",
+      "atoms": [
+        "c",
+        "d"
+      ],
+      "target": 1.7320508075688772,
+      "tolerance": 0.25,
+      "scale": 1.0
+    },
+    {
+      "name": "anchor_distance_diagnostic",
+      "kind": "distance",
+      "atoms": [
+        "a",
+        "b"
+      ],
+      "target": 2.0,
+      "tolerance": 0.001,
+      "scale": 1.0
+    }
+  ]
+}
