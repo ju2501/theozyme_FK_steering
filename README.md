@@ -1,132 +1,157 @@
-# Theozyme-Steered Enzyme Design
+# Theozyme FK Steering
 
-**Status: v0.1.1 CPU research core. Real RFdiffusion2 steering is not implemented or GPU-validated.**
+**Inference-time Feynman–Kac steering toward catalytic geometry.**
 
-RFdiffusion2 + LigandMPNN 계열 효소 설계에서, 재학습 없이 촉매 기하 reward로 샘플링을 유도하는 연구 프로젝트입니다. 현재 릴리스는 기하 계산·reward·FK 엔진·합성 benchmark를 실행할 수 있습니다. **아래 그림은 단백질이나 효소의 실험 결과가 아닙니다.**
+RFdiffusion2 + LigandMPNN 기반 효소 설계에서, 생성 중 촉매 활성부위의 목표 기하(*theozyme*)를 평가하고 유망한 생성 경로에 계산을 더 배분하는 연구 프로젝트입니다.
 
-![Synthetic geometry benchmark, not enzyme results](results/comparison.png)
+핵심 질문은 **“FK steering이 unguided 생성과 사후 선별보다, 서열 설계·구조 예측 후에도 목표 촉매 기하를 보존하는 후보를 더 잘 만드는가?”**입니다. 현재 v0.1.1은 이 질문을 실험하기 위한 **CPU 기하 reward·FK 코어·합성 benchmark**를 제공합니다. 실제 RFdiffusion2 연결과 효소 설계 실험은 앞으로 검증할 단계입니다.
 
-## 1. Motivation
+[빠른 실행](#quickstart) · [현재 결과](#results) · [방법](docs/METHOD.md) · [개발 로드맵](docs/NEXT_STEPS.md) · [Chromebook 안내](docs/CHROMEBOOK.md)
 
-연구 질문: 동일 계산 예산에서 inference-time FK가 unguided 생성 및 사후 선별보다 **downstream에서 촉매 기하를 보존하는 설계**를 더 많이 만드는가?
+## 구현 상태
 
-기여 후보는 효소용 원자 대응·기하 reward, RFdiffusion2 중간 상태와의 연결, downstream 검증입니다. 기존 FK 구현은 RFdiffusion을 감싸며 ProteinMPNN과 packing/relaxation으로 reward를 계산합니다. 이를 RFdiffusion2에 바로 호환된다고 가정하지 않습니다. [FK 논문](https://arxiv.org/html/2511.09216), [공식 구현](https://github.com/ErikHartman/FK-RFdiffusion).
+| 구성 요소 | 현재 지원 범위 |
+|---|---|
+| 기하 평가 | 거리·각·이면각, 주기 경계 처리, Kabsch 및 anchor 기준 RMSD |
+| Theozyme reward | 원자 selector, fixed/generated 역할, 허용 오차를 둔 기하 penalty |
+| FK / SMC | Difference potential, ESS 기반 systematic resampling, 계보 기록 |
+| CPU benchmark | Unguided · Best-of-N · FK 비교, 독립 ensemble 반복, 결과 그림 |
+| RFdiffusion2 | Adapter 미구현. Baseline launcher는 제공하지만 GPU 실행 미검증 |
+| LigandMPNN / 구조 예측 | 자동 연동 미구현. 실제 효소 task 및 gradient guidance도 미구현 |
 
-기하 개선을 효소 활성 향상으로 해석하지 않으며, 최초 적용이라는 우선권 주장도 하지 않습니다.
+## 생성 도중 어디에 개입하는가?
 
-## 2. Method
+![Implemented CPU FK loop and planned GPU integration](docs/assets/fk-overview.svg)
 
-- 거리 단위: Å, 각도·이면각: degree. 이면각 오차는 주기 경계에서 wrap합니다.
-- 제약별 정규화 위반량: `v = max(0, abs(error) - tolerance) / scale`.
-- Reward: 생성 원자가 포함된 제약의 `-sum(weight * v**2) / sum(weight)`; 0이 최상입니다.
-- 고정 원자만 포함된 항은 diagnostics에 남기고 reward에서는 제외합니다. 모든 항이 고정이면 steering을 거부합니다.
-- FK는 **difference potential만** 구현합니다. 초기 log-potential은 0이며, adaptive ESS 때문에 resampling을 건너뛰어도 log-weight를 보존합니다.
-- 중간 스케줄과 별개로 마지막 단계에는 terminal reward와 최종 resampling을 적용합니다. `scale=0`이면 모든 steering을 생략합니다.
-- `Sampler`의 initialize/advance/predict/clone 계약으로 모델 의존성을 격리합니다. 모델 객체는 공유해도 각 입자의 mutable cache는 공유하면 안 됩니다.
+각 입자는 하나의 생성 상태입니다. 지정한 단계에서 예측 좌표를 채점하고, reward 변화로 가중치를 갱신합니다. 가중치가 소수 입자에 집중되면 resampling하여 다음 단계를 진행합니다. **Best-of-N은 생성이 끝난 뒤 후보를 선별하는 비교군**입니다.
 
-수식·경계 조건은 [docs/METHOD.md](docs/METHOD.md), 실제 결합 요건은 [docs/RFD2_INTEGRATION.md](docs/RFD2_INTEGRATION.md)를 참조하세요.
+향후 RFdiffusion2 adapter는 좌표뿐 아니라 self-conditioning, cache, 원자 대응 등 진행에 필요한 상태 전체를 보존해야 합니다. 도식의 점선 영역은 향후 연결할 GPU 단계입니다.
 
-## 3. Installation
+## Quickstart
 
-Crostini에서 Python 3.10 이상을 사용합니다. 기본 의존성은 NumPy뿐이며 Torch·CUDA·Apptainer 없이 실행됩니다.
+### 1. CPU 환경 설치
+
+Python **3.10 이상**이 필요합니다. Chromebook의 Crostini에서도 CPU 경로를 실행할 수 있으며 CUDA는 필요하지 않습니다.
 
 ```bash
+git clone https://github.com/ju2501/theozyme_FK_steering.git
+cd theozyme_FK_steering
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e '.[dev,report]'
+```
+
+이미 프로젝트 폴더가 있다면 해당 폴더에서 venv 생성부터 시작하세요. Crostini에서 `venv` 또는 `ensurepip` 오류가 나면 `sudo apt update` 후 `sudo apt install python3-venv`를 실행합니다.
+
+기본 의존성은 NumPy입니다. `dev`는 pytest, `report`는 matplotlib을 추가합니다. 상세 환경 설정은 [CHROMEBOOK.md](docs/CHROMEBOOK.md)를 참고하세요.
+
+### 2. 설치 확인과 단일 구조 채점
+
+```bash
 python -m unittest discover -s tests -v
-```
-
-`pytest -q`로도 같은 테스트를 수집할 수 있습니다. 이번 작업 환경에서는 Python 3.12로 **unittest 54개 통과**를 확인했습니다. Pytest 자체 실행 및 GitHub Actions 실행은 아직 확인하지 않았습니다. 새 venv에서의 온라인 의존성 설치는 사용자 환경에서 확인해야 합니다. 빌드 환경에서는 기존 NumPy를 사용한 editable 설치를 검증했습니다.
-
-conda를 선호하면 `env/steer-cpu.yml`을 사용할 수 있습니다. 해당 conda 설치 경로는 아직 검증하지 않았습니다. 상세 안내: [Chromebook·Codex·GitHub](docs/CHROMEBOOK.md). 저장소 구성 방향: [참고 저장소와 적용 계획](docs/REPOSITORY_STYLE.md).
-
-## 4. Quickstart
-
-프로젝트 최상위에서:
-
-```bash
 python -m steer.cli.main score --task configs/theozyme/synthetic.json --pdb tests/fixtures/synthetic.pdb
-python -m steer.cli.main demo --config configs/runs/toy.json --out runs/my-demo --plot
 ```
 
-첫 명령은 작은 **합성 PDB**의 reward 0과 `passed: true`를 출력합니다. 두 번째는 약간의 확률적 이동을 하는 점 하나를 세 고정점과의 거리 제약으로 유도합니다. 이것은 RFdiffusion2를 모사하는 생물학적 모델이 아닙니다.
+합성 PDB fixture의 기대 결과는 **reward 0, valid true, passed true**입니다. `valid`는 채점 가능 여부이고, `passed`는 모든 기하 제약을 허용 오차 안에서 만족했는지입니다. 유효하지만 제약을 통과하지 못한 구조도 `score` 명령의 종료 코드는 0이므로 `passed` 값을 확인하세요.
 
-중단 후에는 같은 명령에 `--resume`을 붙입니다. 완료된 **ensemble 반복 단위**부터 이어갑니다. config·task·core source·Python/NumPy 버전이 달라지면 재개를 거부합니다. trajectory 중간 재개는 미구현입니다. 기존 출력 디렉터리를 덮어쓰지 않습니다.
-
-## 5. Usage
-
-### Task 정의
-
-`configs/theozyme/synthetic.json`처럼 원자 selector와 fixed/generated 역할을 지정합니다. 실제 효소용 숫자를 임의로 제공하지 않습니다. 선택한 반응·참조 구조·원자 매핑에서 기하를 확인해 새 task를 작성해야 합니다.
-
-PDB parser는 첫 MODEL을 사용하고, 원자별로 occupancy가 높은 altloc을 선택합니다. 중복·모호한 매핑은 오류입니다. 실제 실험 입력은 하나의 일관된 conformer로 정리하세요. mmCIF·hybrid-36 번호·자동 대칭 원자 매핑은 지원하지 않습니다.
-
-### 랩 GPU / Colab
+### 3. 세 방법 비교
 
 ```bash
-python scripts/probe_runtime.py --out runtime_probe.json
+python -m steer.cli.main demo --config configs/runs/toy.json --out runs/first-demo --plot
 ```
 
-RFdiffusion2 checkout과 SIF가 있으면 `--upstream /actual/RFdiffusion2 --sif /actual/image.sif`를 추가합니다. 이 도구는 환경을 읽고 JSON을 남기며 모델을 설치하거나 실행하지 않습니다.
+이 데모는 **세 고정점과 한 이동점의 거리 제약**을 다룹니다. 단백질 생성 모델이나 실제 효소 실험은 아닙니다.
 
-`pipelines/rfd2/baseline.py`는 공식 baseline 호출을 구성하는 **미검증 GPU launcher**입니다. 기본은 dry-run이며 pinned commit을 요구합니다. `--execute`를 지정해야 실행합니다. 실제 steering 명령인 `scripts/run_steered.sh`는 현재 미지원 오류로 종료합니다. [GPU 안내](docs/GPU_RUNBOOK.md).
+| 출력 파일 | 확인할 내용 |
+|---|---|
+| `runs/first-demo/comparison.png` | Reward와 좌표 다양성 비교 |
+| `runs/first-demo/summary.json` | 방법별 평균, 통과율, 반복 간 통계 |
+| `runs/first-demo/replicate_metrics.csv` | 각 독립 ensemble의 지표와 비용 |
+| `runs/first-demo/selected.csv` | 선택된 좌표·reward·계보 |
+| `runs/first-demo/manifest.json` | 설정, task/source hash, 실행 버전 |
+| `runs/first-demo/replicates/` | 반복별 원본 pool과 FK resampling 기록 |
 
-## 6. Results
+새 실험에는 새로운 `--out` 경로를 사용합니다. 중단된 실행은 동일 명령에 `--resume`을 붙여 **완료된 ensemble 반복 단위**로 재개합니다. 설정·task·core source·Python/NumPy 버전이 달라지면 재개를 거부합니다. trajectory 중간 재개는 지원하지 않습니다. v0.1.1의 반복별 checkpoint 식별자 검증 보완 사항은 [개발 로드맵](docs/NEXT_STEPS.md)에 기록되어 있습니다.
 
-현재 확인한 결과는 CPU synthetic benchmark뿐입니다. config: `configs/runs/toy.json`, 20개 독립 ensemble, 입자 16개, 40 steps, 최종 선택 4개입니다.
+## Results
 
-| 방법 | 평균 reward ↑ | 선택 점 사이 평균 거리 | sampler 호출 / ensemble |
-|---|---:|---:|---:|
-| Unguided | -5.3235 | 2.4686 | 640 |
-| Best-of-N | -1.5335 | 1.8139 | 640 |
-| FK | -0.5823 | 1.1574 | 640 |
+![Synthetic benchmark: reward and coordinate spread](results/comparison.png)
 
-FK가 이 toy reward를 높이는 동시에 다양성이 줄어드는 동작을 확인했습니다. **효소에 대한 유효성은 이 결과로 판단할 수 없습니다.** 제약 전체 통과는 FK에서 80개 출력 중 1개뿐이며, 실제 효소 성공률을 뜻하지 않습니다. 입자들은 계보를 공유하므로 독립 표본이 아닙니다.
+저장된 [설정](configs/runs/toy.json)은 seed 20260924부터 **20개 독립 ensemble**, ensemble당 **16 particles × 40 steps**, 최종 선택 **4개**를 사용합니다.
 
-세 방법은 sampler 호출 수를 맞췄습니다. FK의 reward 평가는 더 많으므로 동일 wall time을 의미하지 않습니다. Unguided와 best-of-N은 같은 baseline pool을 공유합니다. 불확실성은 입자 대신 독립 ensemble을 단위로 계산합니다. [결과·비용 해석](docs/EXPERIMENTS.md).
+| 방법 | 평균 reward ↑ | 선택 좌표 사이 평균 거리 | 전체 제약 통과 / 선택 출력 | Sampler calls / ensemble |
+|---|---:|---:|---:|---:|
+| Unguided | −5.3235 | 2.4686 | 0 / 80 | 640 |
+| Best-of-N | −1.5335 | 1.8139 | 0 / 80 | 640 |
+| FK | −0.5823 | 1.1574 | 1 / 80 | 640 |
 
-## 7. Repository Layout
+**이 합성 문제에서 FK는 평균 reward를 높였지만 좌표 다양성은 줄었고, 전체 제약 통과는 드물었습니다.** 기하 점수 개선이 실제 효소 활성 향상을 뜻하지는 않습니다.
+
+- Unguided와 Best-of-N은 같은 baseline pool을 공유합니다. 세 방법의 최종 선택 수는 같습니다.
+- Sampler 호출 수를 맞춘 비교입니다. FK의 추가 reward 평가 비용이 있어 동일 wall time 비교는 아닙니다.
+- FK 입자들은 계보를 공유합니다. 불확실성은 80개 선택 출력이 아닌 **20개 독립 ensemble**을 단위로 계산합니다.
+
+수치와 실행 정보는 [summary.json](results/summary.json), [manifest.json](results/manifest.json)에 있습니다. 분석 정의는 [EXPERIMENTS.md](docs/EXPERIMENTS.md)를 참고하세요.
+
+## Reward와 FK의 핵심 규칙
+
+제약별 오차에서 허용 오차를 뺀 양수 부분을 scale로 나누고, 가중 제곱 평균에 음수를 붙입니다. **Reward는 0이 최상**입니다.
 
 ```text
-src/steer/geometry/    거리·각·이면각·정합·task schema
-src/steer/rewards/     촉매 기하 reward와 invalid 처리
-src/steer/particles/   difference potential·ESS·systematic resampling
-src/steer/hooks/       sampler 계약·synthetic sampler·미구현 RFD2 경계
-src/steer/io/          JSON·PDB·원자 매핑
-src/steer/cli/         score·demo·report 명령
-pipelines/rfd2/       upstream baseline launcher (GPU 미검증)
-scripts/              테스트·데모·환경 probe
-tests/                CPU 검증과 합성 fixture
-configs/              재현 가능한 task·run 설정
-results/              이번 합성 benchmark의 소규모 결과
-docs/                 실험·연결·환경·다음 작업 안내
-notebooks/            Colab에서 CPU 데모를 실행하는 보조 노트북
+violation_j = max(0, abs(error_j) - tolerance_j) / scale_j
+reward = -sum(weight_j * violation_j^2) / sum(weight_j)
 ```
 
-## 8. Reproducibility
+- 거리 단위는 Å, 각·이면각은 degree입니다. 이면각 오차는 주기 경계에서 wrap합니다.
+- 생성 원자가 포함된 제약만 reward에 들어갑니다. 고정 원자만의 제약은 diagnostics와 전체 통과 여부에 사용합니다.
+- 모든 제약이 고정 원자만 포함하면 steering을 거부합니다. 역할 태그가 있어도 실제 예측에서 reward가 변하는지는 별도 확인해야 합니다.
+- Missing atom이나 정의되지 않은 기하는 invalid입니다. FK에서 한 번 invalid가 된 계보는 제거 대상이며, 모든 입자가 invalid이면 오류로 종료합니다.
+- Difference potential의 log-weight를 누적하며, 중간 resampling을 생략해도 가중치를 보존합니다. 양의 FK scale에서는 마지막 단계의 채점·resampling을 반드시 수행합니다. `scale=0`은 unguided 경로를 따릅니다.
 
-`results/manifest.json`에 config, task SHA256, core source SHA256, 패키지·Python·NumPy 버전을 기록했습니다. `selected.csv`는 선택 출력, `replicate_metrics.csv`는 독립 반복별 평가, `summary.json`은 집계입니다. 새 실행에는 `replicates/*.json`으로 원본 pool과 resampling 계보도 남습니다.
+수식과 경계 조건: [METHOD.md](docs/METHOD.md). 실제 원자 선택 규칙은 [synthetic task](configs/theozyme/synthetic.json)를 참고하세요. 현재 parser는 PDB만 지원하며 mmCIF와 자동 대칭 원자 대응은 지원하지 않습니다. 거리 제약만으로 chirality나 촉매 작용이 보장되지는 않습니다.
 
-서로 다른 NumPy/BLAS/운영체제 사이의 bitwise 일치까지 보장하지 않습니다. 모델 실험에서는 추가로 upstream SHA·weights/SIF hash·runtime·GPU 종류·총 비용을 기록해야 합니다.
+## 설정 변경과 GPU 확장
 
-## 9. Limitations & Future Work
+[configs/runs/toy.json](configs/runs/toy.json)에서 입자 수(`num_particles`), 반복 수(`replicates`), steering 강도(`scale`), 평가 간격(`every`), ESS 임계값(`ess_fraction`)을 조절할 수 있습니다. `start_fraction`과 `end_fraction`은 중간 평가 구간이며 최종 평가를 끄지 않습니다. 변경한 설정은 별도 파일과 새 출력 폴더로 보관하세요.
 
-- **미구현:** 실제 RFdiffusion2 adapter, LigandMPNN/AF2 자동 실행, 실제 효소 task, GPU 실험, gradient guidance.
-- Synthetic sampler는 stochastic coordinate process입니다. RFdiffusion2 전파가 결정론적이면 입자 복제만으로 새 trajectory가 생기지 않습니다.
-- fixed/generated 태그만으로 reward 가변성이 보장되지는 않습니다. 실제 중간 예측에서 확인해야 합니다.
-- 거리만으로는 chirality·방향성·촉매 작용을 보장할 수 없습니다. 현재 synthetic task에는 의도적으로 거리 항만 있습니다.
-- Kabsch RMSD와 ligand-anchor RMSD를 구분합니다. 기하 평가가 곧 activity 평가가 아닙니다.
-- 실험에서 missing atom·invalid 결과를 조용히 삭제해 통과율을 높여서는 안 됩니다.
-- 공개 benchmark의 결론을 내려면 실제 downstream·독립 반복·compute-matched control이 필요합니다.
+현재 `demo`는 synthetic sampler 전용입니다. 실제 PDB의 정적 채점에는 `score`를 사용하고, RFdiffusion2의 생성 도중 채점에는 실제 adapter 구현이 필요합니다.
 
-진행 순서: [NEXT_STEPS.md](docs/NEXT_STEPS.md).
+| 실행 장소 | 권장 작업 |
+|---|---|
+| Crostini / CPU | Reward·원자 대응 검증, 테스트, 합성 실험, 결과 분석 |
+| 랩 GPU | 고정한 upstream 버전의 baseline, adapter 검증, 실제 생성 실험 |
+| Colab GPU | 동일 baseline의 설치·실행을 먼저 확인한 뒤 작은 반복 실험 |
 
-## 10. Citation & Acknowledgements
+RFdiffusion2 공식 평가 경로는 **RFdiffusion2 → LigandMPNN → Chai-1**입니다. 이 프로젝트에서 AF2를 선택한다면 ligand-relative 기하를 어디에서 평가할지 따로 정해야 합니다. 현재 제공하는 Colab 노트북은 CPU 데모용입니다. GPU 준비는 [GPU_RUNBOOK.md](docs/GPU_RUNBOOK.md), 연결 계약은 [RFD2_INTEGRATION.md](docs/RFD2_INTEGRATION.md)에 있습니다.
 
-- [RFdiffusion2 공식 문서](https://rosettacommons.github.io/RFdiffusion2/readme_link.html)
-- [RFdiffusion2 환경 설치](https://rosettacommons.github.io/RFdiffusion2/installation.html)
-- [FK steering 논문](https://arxiv.org/html/2511.09216), [구현](https://github.com/ErikHartman/FK-RFdiffusion)
-- [LigandMPNN](https://github.com/dauparas/LigandMPNN)
+## 다음 개발 목표
 
-이 배포본에는 upstream 코드·가중치·컨테이너를 포함하지 않습니다. 자체 코드의 공개 라이선스는 아직 지정하지 않았습니다. 공개 배포 전 저장소 소유자가 라이선스를 선택하고, 실제 포함할 외부 자산의 조건을 확인합니다.
+1. **실험 신뢰성:** checkpoint 반복 식별자 검증, 배포본 설치·실행 CI.
+2. **실제 task 1개:** 출처가 있는 참조 기하, 원자 매핑, 좌표 perturbation 검증.
+3. **RFdiffusion2 adapter:** baseline 재현, 중간 reward 가변성, 완전한 상태 복제, λ=0 대조.
+4. **단계별 평가:** 생성 직후·LigandMPNN 후·구조 예측 후의 기하 보존을 추적.
+5. **효과 비교:** 동일 선택 수와 기록한 계산 비용으로 Unguided / Best-of-N / FK 비교.
+
+각 단계의 완료 조건과 주간 작업 단위는 [NEXT_STEPS.md](docs/NEXT_STEPS.md)에 정리했습니다. Gradient guidance와 여러 반응으로의 확장은 단일 task 경로를 검증한 뒤 진행합니다.
+
+## 코드와 문서 탐색
+
+| 경로 | 역할 |
+|---|---|
+| [`src/steer/geometry/`](src/steer/geometry/) · [`rewards/`](src/steer/rewards/) | 기하 계산, task 정의, reward |
+| [`src/steer/particles/`](src/steer/particles/) | FK 가중치·ESS·resampling |
+| [`src/steer/hooks/`](src/steer/hooks/) | Sampler 계약, toy sampler, RFD2 연결 경계 |
+| [`src/steer/io/`](src/steer/io/) · [`cli/`](src/steer/cli/) | PDB/JSON 입출력과 실행 명령 |
+| [`tests/`](tests/) · [`configs/`](configs/) | 테스트, 합성 fixture, 실행 설정 |
+| [`pipelines/rfd2/`](pipelines/rfd2/) | GPU 미검증 baseline launcher |
+| [`docs/`](docs/) · [`DECISIONS.md`](DECISIONS.md) | 상세 방법, 개발 계획, 설계 결정 기록 |
+
+검증 이력은 [BUILD_REPORT.md](docs/BUILD_REPORT.md)에 있습니다. Python 3.12에서 로컬 unittest 54개와 CPU 데모를 확인했습니다. 2026-10-11에는 [GitHub Actions](https://github.com/ju2501/theozyme_FK_steering/actions/runs/38138798702)에서도 Python 3.10/3.12의 설치·pytest·score·CPU demo가 통과했습니다. OS·NumPy 버전 간 bitwise 동일성은 보장하지 않습니다.
+
+## References and license
+
+- [FK-RFdiffusion](https://github.com/ErikHartman/FK-RFdiffusion): RFdiffusion을 대상으로 한 FK steering 선행 구현. 본 프로젝트는 RFdiffusion2의 촉매 기하 평가와 연결을 연구합니다.
+- [RFdiffusion2 공식 문서](https://rosettacommons.github.io/RFdiffusion2/readme_link.html): baseline, 출력 표현, LigandMPNN·Chai-1 평가 경로.
+- [LigandMPNN](https://github.com/dauparas/LigandMPNN): ligand-aware 서열 설계와 side-chain packing.
+
+이 저장소에는 upstream 코드·가중치·컨테이너를 포함하지 않습니다. 자체 코드의 라이선스는 아직 선택하지 않았습니다.
