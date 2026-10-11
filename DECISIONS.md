@@ -378,3 +378,10 @@ apptainer exec --nv \
 - D6-1: 사용자의 최초 push 이후 원격 main의 1128c81 커밋을 확인했다. README 수정안의 기준 문서와 실제 원격 파일이 일치함을 검증했다.
 - D6-2: 준비한 README, FK 개요 그림, 개발 로드맵을 별도 문서 브랜치에서 검토한다. 코어와 저장된 결과는 변경하지 않는다.
 - D6-3: 원격 main의 GitHub Actions에서 Python 3.10/3.12 설치, pytest, score, CPU demo 통과를 확인하고 README와 BUILD_REPORT에 검증 이력을 추가한다.
+
+
+## 11. 2026-10-11 README language and audience
+
+- D7-1: Use English throughout the README and describe setup for general Python users rather than a specific device.
+- D7-2: Remove double-asterisk emphasis from the README, retaining headings, tables, figures, and executable examples.
+- D7-3: Preserve the implementation scope, benchmark results, and validation evidence. Platform examples do not imply platform validation.
