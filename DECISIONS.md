@@ -362,3 +362,26 @@ apptainer exec --nv \
 - D4-2: Git에도 설정 파일이 빠지지 않도록 .gitignore의 runs/를 /runs/로 고친다.
 - D4-3: source-tree 테스트 외에 배포 ZIP을 별도 폴더에 추출하고 그 소스를 설치해 테스트·데모를 확인한다. 이를 Crostini 자체 검증으로 부르지 않는다.
 - D4-4: UvA의 튜토리얼, heme의 단계별 파이프라인, RFdiffusion의 실행 예제를 참고하되 실제 지원 수준을 문서에 표시한다.
+
+
+## 9. 2026-10-08 README 및 개발 순서 정리
+
+- D5-1: README를 연구 질문, 구현 상태, 개요 그림, CPU quickstart, 결과 해석, 다음 단계 순서로 정리한다. 실행 위치와 결과 파일, valid/passed의 차이를 명시한다.
+- D5-2: GPU 성능이나 새 효소 실험을 주장하지 않는다. CPU v0.1.1 결과는 기존 값을 유지한다.
+- D5-3: 다음 코드 변경은 반복별 checkpoint identity 검증으로 시작한다. 실제 task의 원자 매핑·reward 가변성과 upstream baseline을 확인한 뒤 adapter를 구현한다.
+- D5-4: 공식 RFdiffusion2 평가 경로인 LigandMPNN/Chai-1과 프로젝트에서 고려하는 AF2의 평가 범위를 구분한다. 단계별 ligand-relative 기하 보존을 연구 지표로 삼는다.
+- D5-5: 이 문서 갱신은 보관된 로컬 v0.1.1 기준이다. 확인한 GitHub 주소는 2026-10-08 API에서 빈 저장소로 응답해 원격 최신 코드에 적용한 것으로 표시하지 않는다.
+
+
+## 10. 2026-10-11 원격 코드 확인 및 문서 반영
+
+- D6-1: 사용자의 최초 push 이후 원격 main의 1128c81 커밋을 확인했다. README 수정안의 기준 문서와 실제 원격 파일이 일치함을 검증했다.
+- D6-2: 준비한 README, FK 개요 그림, 개발 로드맵을 별도 문서 브랜치에서 검토한다. 코어와 저장된 결과는 변경하지 않는다.
+- D6-3: 원격 main의 GitHub Actions에서 Python 3.10/3.12 설치, pytest, score, CPU demo 통과를 확인하고 README와 BUILD_REPORT에 검증 이력을 추가한다.
+
+
+## 11. 2026-10-11 README language and audience
+
+- D7-1: Use English throughout the README and describe setup for general Python users rather than a specific device.
+- D7-2: Remove double-asterisk emphasis from the README, retaining headings, tables, figures, and executable examples.
+- D7-3: Preserve the implementation scope, benchmark results, and validation evidence. Platform examples do not imply platform validation.

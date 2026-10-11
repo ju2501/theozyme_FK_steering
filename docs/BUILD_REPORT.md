@@ -28,3 +28,10 @@ Exact Python/NumPy/source identifiers are recorded in results/manifest.json. No 
 The v0.1.0 ZIP omitted configs/runs/toy.json due to an overbroad runs-directory exclusion. The old archive integrity check did not catch this.
 
 Fixed the archive builder and anchored /runs/ in .gitignore. Added two regression tests. Extracted the rebuilt ZIP into a separate directory and installed THAT source in a new venv using existing system dependencies (no fresh network dependency resolution). Confirmed the import path points to the extracted copy; all 54 tests and the complete synthetic demo with plot passed. git check-ignore confirmed configs/runs/toy.json is trackable. This is still not a test on the user's actual Crostini system.
+
+
+## 2026-10-11 GitHub Actions
+
+Remote main commit `1128c81dd4226ae4c7a779018cdc081a40fb7109` matches the preserved v0.1.1 baseline (81 file blobs compared). Both Python 3.10 and 3.12 jobs passed editable installation with dev dependencies, pytest, the synthetic score command, and the CPU demo.
+
+[Verified workflow run](https://github.com/ju2501/theozyme_FK_steering/actions/runs/38138798702). This run did not include plotting or real GPU inference. The earlier entries above describe their original validation scope.
